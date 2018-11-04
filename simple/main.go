@@ -7,9 +7,10 @@ import (
 
 func main() {
 	c := cli.Cli{}
+	var cmd string
 	for {
-		var cmd string
 		fmt.Scanln(&cmd)
+		fmt.Println(cmd)
 		c.Run(cmd)
 	}
 }

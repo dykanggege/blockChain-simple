@@ -1,27 +1,25 @@
 package cli
 
 import (
-	"blockChain/simple/blockchain"
 	"fmt"
 )
 
-type Cli struct {
-	
+type Cli struct{}
+
+func printUsage() {
+	fmt.Println("Usage:")
+	fmt.Println("  addblock -data 添加区块的数据")
 }
 
-func (c *Cli)Run(cmd string)  {
-	var option string
-	fmt.Sscan(cmd,&option)
+func (c *Cli) Run(cmd string) {
+	option := ""
+	fmt.Sscan(cmd, &option)
 
 	switch option {
 	case "addblock":
-		addBlock(cmd)
+	default:
+		fmt.Println("无效的命令!!!")
+		printUsage()
+		return
 	}
-}
-
-func addBlock(cmd string)  {
-	data := ""
-	fmt.Sscan(cmd,_,&data)
-	bc := blockchain.New()
-	bc.AddBlock(data)
 }

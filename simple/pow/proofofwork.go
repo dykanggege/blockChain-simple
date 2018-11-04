@@ -1,6 +1,7 @@
-package block
+package pow
 
 import (
+	"blockChain/simple/block"
 	"blockChain/simple/util"
 	"bytes"
 	"crypto/sha256"
@@ -10,35 +11,38 @@ import (
 	"sync"
 )
 
-// 工作难度
-const TARGETBITS = 20
+// 工作难度，不做动态调整，固定难度
+const Targetbits = 20
 
 // 要生成的 hash 值长度
-const HASHLENGTH = 256
+const hashlength = 256
 
 // 幸运数字的大小限制
-const MAXLUCKNUM = math.MaxInt64
+const maxLucknum = math.MaxInt64
 
 // 工作量证明
 type ProofOfWork struct {
-	block  *Block
+	block  *block.Block
 	target *big.Int
 }
 
-func NewProofOfWork(b *Block) *ProofOfWork {
+func NewProofOfWork(b *block.Block) *ProofOfWork {
 	target := big.NewInt(1)
-	target = target.Lsh(target, uint(HASHLENGTH-TARGETBITS))
+	target = target.Lsh(target, uint(hashlength-Targetbits))
 
 	return &ProofOfWork{block: b, target: target}
 }
 
 // 得到区块的 bytes 数据,不包含 luckNum
+//包含在区块链中的区块，除了区块的数据，还有目标难度和版本号等，这里做了简化，只包含目标难度
 func (pow *ProofOfWork) prepareData() []byte {
 	return bytes.Join(
 		[][]byte{
-			pow.block.Data,
-			pow.block.PrevHash,
+			pow.block.PrevBlockHash,
+			//使用交易的 merkleTree 根哈希值作为数据填充
+			pow.block.HashTranscations(),
 			util.IntToHex(pow.block.TimeStamp),
+			util.IntToHex(Targetbits),
 		}, []byte{})
 }
 
@@ -58,7 +62,7 @@ func (pow *ProofOfWork) Run() (int64, []byte) {
 		go func() {
 			var hashint big.Int
 			var luck int64
-			for start := i * interval; start < MAXLUCKNUM; start += cpuNum * interval {
+			for start := i * interval; start < maxLucknum; start += cpuNum * interval {
 				for luck = start; luck < start+interval; luck++ {
 					lock.Lock()
 					if clo {
