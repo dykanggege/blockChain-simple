@@ -46,7 +46,7 @@ func (pow *ProofOfWork) prepareData(nonce int) []byte {
 }
 
 // Run performs a proof-of-work
-func (pow *ProofOfWork) Run() (int, [sha256.Size]byte) {
+func (pow *ProofOfWork) Run() (int, []byte) {
 	var hashInt big.Int
 	var hash [sha256.Size]byte
 	nonce := 0
@@ -69,7 +69,7 @@ func (pow *ProofOfWork) Run() (int, [sha256.Size]byte) {
 	}
 	fmt.Print("\n\n")
 
-	return nonce, hash
+	return nonce, hash[:]
 }
 
 // Validate validates block's PoW
