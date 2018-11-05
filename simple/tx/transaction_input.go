@@ -12,7 +12,7 @@ type TXInput struct {
 	Vout int
 	//用来解锁输出的签名
 	Signature []byte
-	//输入用户的公钥
+	//该输入来源的地址
 	PubKey []byte
 }
 

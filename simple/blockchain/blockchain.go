@@ -3,18 +3,29 @@ package blockchain
 import (
 	"blockChain/simple/block"
 	"blockChain/simple/util"
+	"fmt"
 	"github.com/boltdb/bolt"
+	"os"
 )
 
 const dbFile = "data.DB"
 const blockBucket = "blocks"
-const genesisCoinbaseData = ""
+const genesisCoinbaseData = "这是最好的时代，也是最坏的时代"
 
 type BlockChain struct {
 	// 存储好多好多区块，并连接成一串
 	// 通过前后 hash 值关联自发连接
 	DB       *bolt.DB
 	LastHash []byte
+}
+
+func CreateBlockchain(address, node string) *BlockChain {
+	//确定区块链存储文件是否已存在
+	if _, err := os.Stat(dbFile + node); !os.IsNotExist(err) {
+		fmt.Println("区块链存储文件已存在")
+		os.Exit(1)
+	}
+
 }
 
 // 创建初始区块
