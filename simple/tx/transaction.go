@@ -2,6 +2,7 @@ package tx
 
 import (
 	"blockChain/simple/util"
+	"blockChain/simple/wallet"
 	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -14,6 +15,9 @@ import (
 	"math/big"
 	"strings"
 )
+
+//挖矿奖励
+const reward = 10
 
 type Transaction struct {
 	ID   []byte
@@ -45,10 +49,12 @@ func (tx *Transaction) Hash() []byte {
 	txCopy := *tx
 	txCopy.ID = []byte{}
 	hash := sha256.Sum256(txCopy.Serialize())
+
 	return hash[:]
 }
 
 //对交易做签名
+//使用一个私钥对该交易中所有的输入都做签名
 func (tx *Transaction) Sign(privKey ecdsa.PrivateKey, prevTXs map[string]Transaction) {
 	//币基交易不需要签名，大家承认即可
 	if tx.IsCoinbase() {
@@ -178,5 +184,47 @@ func NewCoinbaseTX(to, data string) *Transaction {
 	}
 
 	txin := TXInput{Txid: []byte{}, Vout: -1, Signature: nil, PubKey: []byte(data)}
+	txout := NewTXOutput(reward, to)
+	tx := Transaction{ID: nil, Vin: []TXInput{txin}, Vout: []TXOutput{*txout}}
+	tx.ID = tx.Hash()
+	return nil
+}
 
+//创建一个找零输出
+func NewUTXOTranscation(wt *wallet.Wallet, to string, amount int, UTXOSet *UTXOset) *Transaction {
+	var inputs []TXInput
+	var outputs []TXOutput
+
+	pubkeyHash := wallet.HashPubKey(wt.PublicKey)
+	num, validOutputs := UTXOSet.FindSpendableOutputs(pubkeyHash, amount)
+
+	if num < amount {
+		log.Println("余额不足")
+	}
+
+	for txid, outs := range validOutputs {
+		txID, err := hex.DecodeString(txid)
+		util.ErrLogPanic(err)
+
+		for _, out := range outs {
+			input := TXInput{Txid: txID, Vout: out, Signature: nil, PubKey: wt.PublicKey}
+			inputs = append(inputs, input)
+		}
+	}
+
+	outputs = append(outputs, *NewTXOutput(amount, to))
+	if num > amount {
+		out := NewTXOutput(num-amount, string(wt.GetAddress()))
+		outputs = append(outputs, *out)
+	}
+
+	tx := Transaction{
+		ID:   nil,
+		Vin:  inputs,
+		Vout: outputs,
+	}
+	tx.ID = tx.Hash()
+	//签名
+
+	return &tx
 }
