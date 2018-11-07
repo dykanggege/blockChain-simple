@@ -20,6 +20,7 @@ import (
 const reward = 10
 
 type Transaction struct {
+	//交易的唯一标识，通过计算交易的hash值得到
 	ID   []byte
 	Vin  []TXInput
 	Vout []TXOutput
