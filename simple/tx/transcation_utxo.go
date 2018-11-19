@@ -6,6 +6,7 @@ import (
 	"blockChain/simple/util"
 	"encoding/hex"
 	"github.com/boltdb/bolt"
+	"log"
 )
 
 //存储所有未被使用的输出
@@ -19,7 +20,7 @@ type UTXOset struct {
 
 //寻找用户可用于支付的输出
 //将多个小的余额拼凑为一个大的余额
-func (u UTXOset) FindSpendableOutputs(pubkeyHash []byte, amount int) (int, map[string][]int) {
+func (u *UTXOset) FindSpendableOutputs(pubkeyHash []byte, amount int) (int, map[string][]int) {
 	unspendOutputs := make(map[string][]int)
 	accumulated := 0
 	db := u.Blockchain.DB
@@ -48,7 +49,7 @@ func (u UTXOset) FindSpendableOutputs(pubkeyHash []byte, amount int) (int, map[s
 }
 
 //查找余额
-func (u UTXOset) FindUTXO(pubkeyHash []byte) []TXOutput {
+func (u *UTXOset) FindUTXO(pubkeyHash []byte) []TXOutput {
 	var UTXOs []TXOutput
 	db := u.Blockchain.DB
 
@@ -71,7 +72,7 @@ func (u UTXOset) FindUTXO(pubkeyHash []byte) []TXOutput {
 }
 
 //返回所有仍有可用输出的交易数量
-func (u UTXOset) CountTransactions() int {
+func (u *UTXOset) CountTransactions() int {
 	db := u.Blockchain.DB
 	count := 0
 
@@ -88,8 +89,44 @@ func (u UTXOset) CountTransactions() int {
 	return count
 }
 
+func (u UTXOset) Reindex() {
+	db := u.Blockchain.DB
+	err := db.Update(func(tx *bolt.Tx) error {
+		err := tx.DeleteBucket([]byte(utxoBucket))
+		if err != nil && err != bolt.ErrBucketNotFound {
+			util.ErrLogPanic(err)
+		}
+
+		_, err = tx.CreateBucket([]byte(utxoBucket))
+		util.ErrLogPanic(err)
+
+		return nil
+	})
+	util.ErrLogPanic(err)
+
+	UTXO := u.Blockchain.FindUTXO()
+
+	err = db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(utxoBucket))
+
+		for txID, outs := range UTXO {
+			key, err := hex.DecodeString(txID)
+			if err != nil {
+				log.Panic(err)
+			}
+
+			err = b.Put(key, outs.Serialize())
+			if err != nil {
+				log.Panic(err)
+			}
+		}
+
+		return nil
+	})
+}
+
 //更新可用于支付的输出表
-func (u UTXOset) Update(block *block.Block) {
+func (u *UTXOset) Update(block *block.Block) {
 	db := u.Blockchain.DB
 
 	err := db.Update(func(tx *bolt.Tx) error {

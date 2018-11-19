@@ -2,9 +2,15 @@ package blockchain
 
 import (
 	"blockChain/simple/block"
+	"blockChain/simple/tx"
 	"blockChain/simple/util"
+	"bytes"
+	"crypto/ecdsa"
+	"encoding/hex"
 	"fmt"
 	"github.com/boltdb/bolt"
+	"github.com/pkg/errors"
+	"log"
 	"os"
 )
 
@@ -19,67 +25,165 @@ type BlockChain struct {
 	LastHash []byte
 }
 
+//创建一个从未存在的区块链
 func CreateBlockchain(address, node string) *BlockChain {
 	//确定区块链存储文件是否已存在
 	if _, err := os.Stat(dbFile + node); !os.IsNotExist(err) {
 		fmt.Println("区块链存储文件已存在")
 		os.Exit(1)
 	}
+	bc := new(BlockChain)
 
-}
+	basetx := tx.NewCoinbaseTX(address, genesisCoinbaseData)
+	genesis := block.NewGenersisBlock(basetx)
 
-// 创建初始区块
-func newGenesisBlock() *block.Block {
-	return block.NewBlock([]byte("2018/10/19/11:16 我坐在火车上，百无聊赖的写下这行代码"), []byte{})
-}
-
-// 初始化区块链
-func New() *BlockChain {
-	var tip []byte
-	db, err := bolt.Open(dbFile, 0600, nil)
+	db, err := bolt.Open(dbFile+node, 0600, nil)
 	util.ErrLogPanic(err)
-
 	err = db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(blockBucket))
-
-		if b == nil {
-			bl := newGenesisBlock()
-			b, err := tx.CreateBucket([]byte(blockBucket))
-			util.ErrLogPanic(err)
-			err = b.Put(bl.Hash, bl.Serialize())
-			util.ErrLogPanic(err)
-			err = b.Put([]byte("l"), bl.Hash)
-			util.ErrLogPanic(err)
-			tip = bl.Hash
-		} else {
-			tip = b.Get([]byte("l"))
-		}
+		b, err := tx.CreateBucket([]byte(blockBucket))
+		util.ErrLogPanic(err)
+		err = b.Put(genesis.Hash, genesis.Serialize())
+		util.ErrLogPanic(err)
+		err = b.Put([]byte("l"), genesis.Hash)
+		util.ErrLogPanic(err)
+		bc.LastHash = genesis.Hash
 		return nil
 	})
-	return &BlockChain{LastHash: tip, DB: db}
+	util.ErrLogPanic(err)
+	bc.DB = db
+	return bc
+}
+
+// 从一个已有的文件里，初始化区块链
+func NewBlockchain(nodeID string) *BlockChain {
+	if _, err := os.Stat(dbFile + nodeID); !os.IsExist(err) {
+		util.ErrLogPanic(err)
+	}
+	db, err := bolt.Open(dbFile+nodeID, 0600, nil)
+	util.ErrLogPanic(err)
+
+	bc := new(BlockChain)
+
+	db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(blockBucket))
+		lasthash := b.Get([]byte("l"))
+		bc.LastHash = lasthash
+		return nil
+	})
+	bc.DB = db
+	return bc
 }
 
 // 传入区块数据，向区块链中添加一个区块
-func (bc *BlockChain) AddBlock(data string) {
-	var lasthash []byte
-	err := bc.DB.View(func(tx *bolt.Tx) error {
+func (bc *BlockChain) AddBlock(bk *block.Block) {
+	err := bc.DB.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(blockBucket))
-		lasthash = b.Get([]byte("l"))
+
+		blockIn := b.Get([]byte(bk.Hash))
+		if blockIn != nil {
+			return nil
+		}
+		blockdata := bk.Serialize()
+		err := b.Put([]byte(bk.Hash), blockdata)
+		util.ErrLogPanic(err)
+
+		lasthash := b.Get([]byte("l"))
+		lastblockdata := b.Get([]byte(lasthash))
+		lastblock := block.DeserializeBlock(lastblockdata)
+
+		if bk.Height > lastblock.Height {
+			err := b.Put([]byte("l"), bk.Hash)
+			util.ErrLogPanic(err)
+			bc.LastHash = bk.Hash
+		}
 		return nil
 	})
 	util.ErrLogPanic(err)
-	err = bc.DB.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(blockBucket))
-		bl := block.NewBlock([]byte(data), lasthash)
-		b.Put(bl.Hash, bl.Serialize())
-		b.Put([]byte("l"), bl.Hash)
-		bc.LastHash = bl.Hash
-		return nil
-	})
 }
 
 func (bc *BlockChain) Iterator() *BlockChainInterator {
 	return &BlockChainInterator{CurrentHash: bc.LastHash, DB: bc.DB}
+}
+
+func (bc *BlockChain) FindTranscation(ID []byte) (*tx.Transaction, error) {
+	iterator := bc.Iterator()
+	for iterator.Has() {
+		bk := iterator.Next()
+		for txix, _ := range bk.Transcations {
+			if bytes.Compare(ID, bk.Transcations[txix].ID) == 0 {
+				return bk.Transcations[txix], nil
+			}
+		}
+	}
+	return &tx.Transaction{}, errors.New("没有找到区块")
+}
+
+func (bc *BlockChain) FindUTXO() map[string]tx.TXOutputs {
+
+}
+
+//得到最近一次区块的高度
+func (bc *BlockChain) GetBestHeight() int {
+	var lastBlock *block.Block
+
+	err := bc.DB.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(blockBucket))
+		lastHash := b.Get([]byte("l"))
+		blockData := b.Get(lastHash)
+		lastBlock = block.DeserializeBlock(blockData)
+
+		return nil
+	})
+	if err != nil {
+		log.Panic(err)
+	}
+
+	return lastBlock.Height
+}
+
+func (bc *BlockChain) GetBlock(blockhash []byte) (*block.Block, error) {
+	iterator := bc.Iterator()
+	for iterator.Has() {
+		bk := iterator.Next()
+		if bytes.Compare(bk.Hash, blockhash) == 0 {
+			return bk, nil
+		}
+	}
+	return nil, errors.New("找不到对应的区块")
+}
+
+func (bc *BlockChain) GetBlockHashs() [][]byte {
+	blockHashs := make([][]byte, 0)
+	iterator := bc.Iterator()
+	for iterator.Has() {
+		bk := iterator.Next()
+		blockHashs = append(blockHashs, bk.Hash)
+	}
+	return blockHashs
+}
+
+func (bc *BlockChain) SignTranscation(t *tx.Transaction, privKey ecdsa.PrivateKey) {
+	prevTXs := map[string]tx.Transaction{}
+
+	for _, vin := range t.Vin {
+		prit, err := bc.FindTranscation(vin.Txid)
+		util.ErrLogPanic(err)
+		prevTXs[hex.EncodeToString(prit.ID)] = *prit
+	}
+
+	t.Sign(privKey, prevTXs)
+}
+
+func (bc *BlockChain) VerifyTranscation(t *tx.Transaction) bool {
+	prevTXs := map[string]tx.Transaction{}
+
+	for _, vin := range t.Vin {
+		prevt, err := bc.FindTranscation(vin.Txid)
+		util.ErrLogPanic(err)
+		prevTXs[hex.EncodeToString(prevt.ID)] = *prevt
+	}
+
+	return t.Verify(prevTXs)
 }
 
 type BlockChainInterator struct {
@@ -99,6 +203,6 @@ func (bci *BlockChainInterator) Next() *block.Block {
 		bl = block.DeserializeBlock(encodeblock)
 		return nil
 	})
-	bci.CurrentHash = bl.PrevHash
+	bci.CurrentHash = bl.PrevBlockHash
 	return bl
 }
