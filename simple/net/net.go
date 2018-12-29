@@ -103,6 +103,11 @@ func SendInv(addr, kind string, items [][]byte) {
 	sendData(addr, request)
 }
 
+func SendGetBlocks(addr string) {
+	payload := gobEncode(Getblocks{nodeAddress})
+
+}
+
 //将指令变为字节便于传输，固定指令的字节长度
 func commandToBytes(command string) []byte {
 	bs := make([]byte, commandLength)
